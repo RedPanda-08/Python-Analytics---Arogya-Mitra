@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session 
 from database import SessionLocal, engine
 import models
@@ -91,6 +91,10 @@ def get_doctor_reviews(doctor_id: int, db: Session = Depends(get_db)):
 
 @app.get("/analytics/hospitals/{hospital_id}/bed-occupancy")
 def get_bed_occupancy(hospital_id: int, db: Session = Depends(get_db)):
+    hospital = db.query(models.Hospital).filter(models.Hospital.id == hospital_id).first()
+
+    if not hospital:
+        raise HTTPException(status_code=404, detail="Hospital not found")
     occupied_beds_count = db.query(models.Bed).filter(
         models.Bed.hospital_id == hospital_id,
         models.Bed.status == 'OCCUPIED'
