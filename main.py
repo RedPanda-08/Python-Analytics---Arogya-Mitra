@@ -5,6 +5,7 @@ from sqlalchemy import func
 from datetime import datetime, timedelta
 import models
 from database import SessionLocal, engine, Base
+from enum import Enum
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -45,6 +46,12 @@ def get_start_date(period: str):
     elif period == "year":
         return today - timedelta(days=365)
     return today - timedelta(days=1)
+
+class PeriodEnum(str, Enum):
+    day = "day"
+    week = "week"
+    month = "month"
+    year = "year"
 
 # --- API Endpoints ---
 
@@ -137,7 +144,7 @@ def get_bed_occupancy(hospital_id: int, db: Session = Depends(get_db)):
     }
 
 @app.get("/analytics/hospitals/{hospital_id}/patient-flow")
-def get_patient_flow(hospital_id: int, period: str = "week", db: Session = Depends(get_db)):
+def get_patient_flow(hospital_id: int, period: PeriodEnum = "week", db: Session = Depends(get_db)):
     """Calculates patient inflow (admissions) and outflow (discharges)."""
     hospital = db.query(models.Hospital).filter(models.Hospital.id == hospital_id).first()
     if not hospital:
@@ -167,7 +174,7 @@ def get_patient_flow(hospital_id: int, period: str = "week", db: Session = Depen
 # ---------- Health Trends -----------
 
 @app.get("/analytics/hospitals/{hospital_id}/disease-trends")
-def get_disease_trends(hospital_id: int, period: str = "month", db: Session = Depends(get_db)):
+def get_disease_trends(hospital_id: int, period: PeriodEnum = "month", db: Session = Depends(get_db)):
     """Finds the most common diagnoses for a hospital over a given period."""
     hospital = db.query(models.Hospital).filter(models.Hospital.id == hospital_id).first()
     if not hospital:
@@ -196,7 +203,7 @@ def get_disease_trends(hospital_id: int, period: str = "month", db: Session = De
     }
 
 @app.get("/analytics/hospitals/{hospital_id}/mortality-rate")
-def get_mortality_rate(hospital_id: int, period: str = "month", db: Session = Depends(get_db)):
+def get_mortality_rate(hospital_id: int, period: PeriodEnum = "month", db: Session = Depends(get_db)):
     """Calculates the mortality rate for patients admitted in a given period."""
     hospital = db.query(models.Hospital).filter(models.Hospital.id == hospital_id).first()
     if not hospital:
