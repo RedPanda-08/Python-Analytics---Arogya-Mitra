@@ -1,34 +1,32 @@
 from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session 
-from database import SessionLocal, engine
-import models
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta
-from fastapi.middleware.cors import CORSMiddleware 
+import models
+from database import SessionLocal, engine, Base
 
-
-#Creates tables in database
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="Python Analytics Service",
+    title="Arogya Mitra Analytics Service",
     description="A service for performing analytics on Python data.",
     version="1.0.0"
 )
 
 origins = [
-    "http://localhost:3000"
+    "http://localhost:3000",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  
+    allow_headers=["*"],  
 )
 
-#Database Dependency
+# Database Dependency 
 def get_db():
     db = SessionLocal()
     try:
@@ -36,26 +34,33 @@ def get_db():
     finally:
         db.close()
 
-
-def get_started_date(period:str):
+# Helper Function for Dates
+def get_start_date(period: str):
+    """Calculates the start date based on the period string."""
     today = datetime.now()
     if period == "week":
         return today - timedelta(days=7)
     elif period == "month":
-        return today - timedelta(days=30)
+        return today - timedelta(days=30) 
     elif period == "year":
         return today - timedelta(days=365)
     return today - timedelta(days=1)
 
-#API Endpoints for Analytics
-# ----------- Hospital and Doctor Rating Endpoints --------------
+# --- API Endpoints ---
+
 @app.get("/")
 def home():
-    return {"message": "Welcome to the Python Analytics Service"}
+    return {"message": "Welcome to the Arogya Mitra Analytics Service"}
+
+# ----------- Hospital and Doctor Rating Endpoints --------------
 
 @app.get("/analytics/hospitals/{hospital_id}/rating")
 def get_hospital_rating(hospital_id: int, db: Session = Depends(get_db)):
     """Calculates and returns the average star rating for a specific hospital."""
+    hospital = db.query(models.Hospital).filter(models.Hospital.id == hospital_id).first()
+    if not hospital:
+        raise HTTPException(status_code=404, detail="Hospital not found")
+    
     avg_rating = db.query(func.avg(models.Review.rating)).join(
         models.Appointment, models.Review.appointment_id == models.Appointment.id
     ).filter(
@@ -64,41 +69,57 @@ def get_hospital_rating(hospital_id: int, db: Session = Depends(get_db)):
 
     return {
         "hospital_id": hospital_id,
-        "average_rating": avg_rating or 0.0 
+        "average_rating": avg_rating or 0.0
     }
 
 @app.get("/analytics/doctors/{doctor_id}/rating")
 def get_doctor_rating(doctor_id: int, db: Session = Depends(get_db)):
     """Calculates and returns the average star rating for a specific doctor."""
+    doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+    
     avg_rating = db.query(func.avg(models.Review.rating)).join(
         models.Appointment, models.Review.appointment_id == models.Appointment.id
     ).filter(
         models.Appointment.doctor_id == doctor_id
     ).scalar()
-    return{"doctor_id": doctor_id,
-           "average_rating": avg_rating or 0.0}
+    
+    return {
+        "doctor_id": doctor_id,
+        "average_rating": avg_rating or 0.0
+    }
 
 @app.get("/analytics/doctors/{doctor_id}/reviews")
 def get_doctor_reviews(doctor_id: int, db: Session = Depends(get_db)):
+    """Fetches all reviews (rating and comment) for a specific doctor."""
+    doctor = db.query(models.Doctor).filter(models.Doctor.id == doctor_id).first()
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Doctor not found")
+    
     reviews = db.query(models.Review).join(
         models.Appointment, models.Review.appointment_id == models.Appointment.id
     ).filter(
         models.Appointment.doctor_id == doctor_id
     ).all()
-    return{"doctor_id": doctor_id, "reviews": reviews}
+    
+    return {"doctor_id": doctor_id, "reviews": reviews}
 
 # ---------- Hospital Operations -----------
 
 @app.get("/analytics/hospitals/{hospital_id}/bed-occupancy")
 def get_bed_occupancy(hospital_id: int, db: Session = Depends(get_db)):
+    """Calculates bed occupancy rate, case-insensitively."""
     hospital = db.query(models.Hospital).filter(models.Hospital.id == hospital_id).first()
-
     if not hospital:
         raise HTTPException(status_code=404, detail="Hospital not found")
+    
+    # Case-insensitive check for 'occupied'
     occupied_beds_count = db.query(models.Bed).filter(
         models.Bed.hospital_id == hospital_id,
-        models.Bed.status == 'OCCUPIED'
+        func.lower(models.Bed.status) == 'occupied'
     ).count()
+    
     total_beds_count = db.query(models.Bed).filter(
         models.Bed.hospital_id == hospital_id
     ).count()
@@ -116,30 +137,46 @@ def get_bed_occupancy(hospital_id: int, db: Session = Depends(get_db)):
     }
 
 @app.get("/analytics/hospitals/{hospital_id}/patient-flow")
-def get_patient_flow(hospital_id: int, period: str="week", db: Session = Depends(get_db)):
-    start_date = get_started_date(period)
+def get_patient_flow(hospital_id: int, period: str = "week", db: Session = Depends(get_db)):
+    """Calculates patient inflow (admissions) and outflow (discharges)."""
+    hospital = db.query(models.Hospital).filter(models.Hospital.id == hospital_id).first()
+    if not hospital:
+        raise HTTPException(status_code=404, detail="Hospital not found")
+    
+    start_date = get_start_date(period)
+    
     inflow_count = db.query(models.Appointment).filter(
         models.Appointment.hospital_id == hospital_id,
-        models.Appointment.admission_time>=start_date
+        models.Appointment.admission_time >= start_date
     ).count()
 
+    # Corrected typo: 'discharge_time'
     outflow_count = db.query(models.Appointment).filter(
         models.Appointment.hospital_id == hospital_id,
-        models.Appointment.disacharge_time>=start_date
+        models.Appointment.discharge_time >= start_date
     ).count()
-    return{"hospital_id": hospital_id,
-           "period": period,
-           "inflow_count": inflow_count,
-           "outflow_count": outflow_count
-           }
+    
+    return {
+        "hospital_id": hospital_id,
+        "period": period,
+        "start_date": start_date,
+        "inflow_count": inflow_count,
+        "outflow_count": outflow_count
+    }
 
 # ---------- Health Trends -----------
 
 @app.get("/analytics/hospitals/{hospital_id}/disease-trends")
 def get_disease_trends(hospital_id: int, period: str = "month", db: Session = Depends(get_db)):
-    start_date = get_started_date(period)
+    """Finds the most common diagnoses for a hospital over a given period."""
+    hospital = db.query(models.Hospital).filter(models.Hospital.id == hospital_id).first()
+    if not hospital:
+        raise HTTPException(status_code=404, detail="Hospital not found")
+    
+    start_date = get_start_date(period)
+    
     trends = db.query(
-        models.Appointement.diagnosis,
+        models.Appointment.diagnosis,
         func.count(models.Appointment.id).label("count")
     ).filter(
         models.Appointment.hospital_id == hospital_id,
@@ -150,34 +187,46 @@ def get_disease_trends(hospital_id: int, period: str = "month", db: Session = De
     ).order_by(
         func.count(models.Appointment.id).desc()
     ).all()
-    return{"hospital_id": hospital_id,
-           "period": period,
-           "start_date": start_date,
-           "disease_trends": trends
-           }
+    
+    return {
+        "hospital_id": hospital_id,
+        "period": period,
+        "start_date": start_date,
+        "disease_trends": trends
+    }
 
 @app.get("/analytics/hospitals/{hospital_id}/mortality-rate")
 def get_mortality_rate(hospital_id: int, period: str = "month", db: Session = Depends(get_db)):
-    start_date = get_started_date(period)
+    """Calculates the mortality rate for patients admitted in a given period."""
+    hospital = db.query(models.Hospital).filter(models.Hospital.id == hospital_id).first()
+    if not hospital:
+        raise HTTPException(status_code=404, detail="Hospital not found")
+    
+    start_date = get_start_date(period)
+    
     patient_ids_query = db.query(models.Appointment.patient_user_id).filter(
         models.Appointment.hospital_id == hospital_id,
         models.Appointment.admission_time >= start_date
     ).distinct()
 
     patient_ids = [id[0] for id in patient_ids_query.all()]
+    
     if not patient_ids:
-        return{
+        # Corrected typos in keys
+        return {
             "hospital_id": hospital_id,
             "period": period,
-            "total_patients__admitted":0,
-            "deaths_in_periods":0,
-            "maortality_rate":0.0
+            "total_patients_admitted": 0,
+            "deaths_in_period": 0,
+            "mortality_rate": 0.0
         }
+    
     death_count = db.query(models.User).filter(
         models.User.id.in_(patient_ids),
         models.User.status == 'DECEASED',
         models.User.date_of_mortality >= start_date
     ).count()
+    
     total_patients_admitted = len(patient_ids)
     
     return {
@@ -187,6 +236,3 @@ def get_mortality_rate(hospital_id: int, period: str = "month", db: Session = De
         "deaths_in_period": death_count,
         "mortality_rate": death_count / total_patients_admitted if total_patients_admitted > 0 else 0.0
     }
-
-
-
