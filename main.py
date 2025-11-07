@@ -7,6 +7,7 @@ import models
 from database import SessionLocal, engine, Base
 from enum import Enum
 
+# Creates tables in database
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -23,11 +24,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],  
-    allow_headers=["*"],  
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Database Dependency 
+# Database Dependency
 def get_db():
     db = SessionLocal()
     try:
@@ -35,14 +36,14 @@ def get_db():
     finally:
         db.close()
 
-# Helper Function for Dates
+# Helper Function for Dates (Corrected name)
 def get_start_date(period: str):
     """Calculates the start date based on the period string."""
     today = datetime.now()
     if period == "week":
         return today - timedelta(days=7)
     elif period == "month":
-        return today - timedelta(days=30) 
+        return today - timedelta(days=30)
     elif period == "year":
         return today - timedelta(days=365)
     return today - timedelta(days=1)
@@ -150,7 +151,7 @@ def get_patient_flow(hospital_id: int, period: PeriodEnum = "week", db: Session 
     if not hospital:
         raise HTTPException(status_code=404, detail="Hospital not found")
     
-    start_date = get_start_date(period)
+    start_date = get_start_date(period.value)
     
     inflow_count = db.query(models.Appointment).filter(
         models.Appointment.hospital_id == hospital_id,
@@ -165,7 +166,7 @@ def get_patient_flow(hospital_id: int, period: PeriodEnum = "week", db: Session 
     
     return {
         "hospital_id": hospital_id,
-        "period": period,
+        "period": period.value,
         "start_date": start_date,
         "inflow_count": inflow_count,
         "outflow_count": outflow_count
@@ -180,7 +181,7 @@ def get_disease_trends(hospital_id: int, period: PeriodEnum = "month", db: Sessi
     if not hospital:
         raise HTTPException(status_code=404, detail="Hospital not found")
     
-    start_date = get_start_date(period)
+    start_date = get_start_date(period.value)
     
     trends = db.query(
         models.Appointment.diagnosis,
@@ -197,7 +198,7 @@ def get_disease_trends(hospital_id: int, period: PeriodEnum = "month", db: Sessi
     
     return {
         "hospital_id": hospital_id,
-        "period": period,
+        "period": period.value,
         "start_date": start_date,
         "disease_trends": trends
     }
@@ -209,9 +210,10 @@ def get_mortality_rate(hospital_id: int, period: PeriodEnum = "month", db: Sessi
     if not hospital:
         raise HTTPException(status_code=404, detail="Hospital not found")
     
-    start_date = get_start_date(period)
+    start_date = get_start_date(period.value)
     
-    patient_ids_query = db.query(models.Appointment.patient_user_id).filter(
+    # --- CRITICAL FIX: Use 'patient_id' from 'Appointment' model ---
+    patient_ids_query = db.query(models.Appointment.patient_id).filter(
         models.Appointment.hospital_id == hospital_id,
         models.Appointment.admission_time >= start_date
     ).distinct()
@@ -222,23 +224,24 @@ def get_mortality_rate(hospital_id: int, period: PeriodEnum = "month", db: Sessi
         # Corrected typos in keys
         return {
             "hospital_id": hospital_id,
-            "period": period,
+            "period": period.value,
             "total_patients_admitted": 0,
             "deaths_in_period": 0,
             "mortality_rate": 0.0
         }
     
-    death_count = db.query(models.User).filter(
-        models.User.id.in_(patient_ids),
-        models.User.status == 'DECEASED',
-        models.User.date_of_mortality >= start_date
+    # --- CRITICAL FIX: Query 'Patient' model, not 'User' model ---
+    death_count = db.query(models.Patient).filter(
+        models.Patient.id.in_(patient_ids),
+        models.Patient.status == 'DECEASED',
+        models.Patient.date_of_mortality >= start_date
     ).count()
     
     total_patients_admitted = len(patient_ids)
     
     return {
         "hospital_id": hospital_id,
-        "period": period,
+        "period": period.value,
         "total_patients_admitted": total_patients_admitted,
         "deaths_in_period": death_count,
         "mortality_rate": death_count / total_patients_admitted if total_patients_admitted > 0 else 0.0
