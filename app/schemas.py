@@ -168,6 +168,7 @@ class DoctorAnalytics(BaseModel):
     specialization: str
     rating: float
     status: str
+    model_config = ConfigDict(from_attributes=True)
 
 class NurseBase(BaseModel):
     shift_type: Optional[str] = None

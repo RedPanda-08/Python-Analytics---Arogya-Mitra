@@ -6,7 +6,7 @@ app = FastAPI(title="Arogya Mitra Analytics Hub")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"], # change it with react dev urls
+    allow_origins=["http://localhost:3000", "http://localhost:5173","http://localhost:8501"], # change it with react dev urls
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
